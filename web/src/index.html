@@ -66,6 +66,9 @@ dialog::backdrop { background: rgba(0,0,0,.45); }
 .msg a { color: var(--accent); }
 details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
 @media (max-width: 480px) { main { padding: 12px; } header img { height: 40px; } }
+.bench-fields {display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px 16px;}
+.bench-fields label {display:grid; gap:4px;}
+#identification canvas {background:white;border:1px solid var(--line);border-radius:6px;margin:10px 0;}
 </style>
 </head>
 <body>
@@ -208,13 +211,26 @@ details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
       <button id="btnClear" data-i18n="clear"></button>
     </div>
   </section>
-<section><h2>System Identification</h2><p>Single servo · Position control · 5 ms</p><label>Servo ID <input required type="number" id="benchId" value="1" min="0" max="252" step="1" style="width:6em"></label> <label>Position P gain <input required type="number" id="benchGain" value="100" min="1" max="400" step="1" style="width:6em"></label> <label>Downward zero (ticks) <input required type="number" id="benchZero" value="2048" min="0" max="4095" step="1" style="width:6em"></label> <label>Travel ± (deg) <input required type="number" id="benchLimit" value="90" min="1" max="180" step="1" style="width:6em"></label> <label>Tip mass (kg) <input required type="number" id="benchMass" value="" min="0" max="20" step="any" style="width:6em"></label> <label>Arm mass (kg) <input required type="number" id="benchArm" value="" min="0" max="20" step="any" style="width:6em"></label> <label>Arm length (m) <input required type="number" id="benchLength" value="" min="0.001" max="3" step="any" style="width:6em"></label> <label>Supply (V) <input required type="number" id="benchVin" value="5" min="3.7" max="6" step="any" style="width:6em"></label> <label>Test <select id="benchTest"><option value="single">Single trial</option><option value="standard">BAM standard set (20)</option></select></label> <label>Trajectory <select id="benchTrajectory"><option>up_and_down</option><option>lift_and_drop</option><option>sin_sin</option><option>sin_time_square</option><option>steps</option></select></label>
-<button id="benchStart">Run test</button> <button id="benchAbort">Abort</button>
-<button id="benchSave">Save JSON</button> <button id="benchRelease">Release trial</button>
-<output id="benchMessage"></output><p>Angle (rad) · Target (gray), measured (blue), prediction (orange)</p>
+<section class="wide" id="identification"><h2>System Identification</h2><p>Single servo · Position control · 5 ms</p><div class="bench-fields">
+<label>Servo ID <input required type="number" id="benchId" value="1" min="0" max="252" step="1" style="width:6em"></label>
+<label>Position P gain <input required type="number" id="benchGain" value="100" min="1" max="400" step="1" style="width:6em"></label>
+<label>Downward zero (ticks) <input required type="number" id="benchZero" value="2048" min="0" max="4095" step="1" style="width:6em"></label>
+<label>Travel ± (deg) <input required type="number" id="benchLimit" value="90" min="1" max="180" step="1" style="width:6em"></label>
+<label>Tip mass (kg) <input required type="number" id="benchMass" value="" min="0" max="20" step="any" style="width:6em"></label>
+<label>Arm mass (kg) <input required type="number" id="benchArm" value="" min="0" max="20" step="any" style="width:6em"></label>
+<label>Arm length (m) <input required type="number" id="benchLength" value="" min="0.001" max="3" step="any" style="width:6em"></label>
+<label>Supply (V) <input required type="number" id="benchVin" value="5" min="3.7" max="6" step="any" style="width:6em"></label>
+<label>Test <select id="benchTest"><option value="single">Single trial</option><option value="standard">BAM standard set (20)</option></select></label>
+<label>Trajectory <select id="benchTrajectory"><option>up_and_down</option><option>lift_and_drop</option><option>sin_sin</option><option>sin_time_square</option><option>steps</option></select></label>
+</div>
+<div class="row">
+<button id="benchInspect">Inspect servo</button> <button class="primary" id="benchStart">Run test</button> <button class="danger" id="benchAbort">Abort</button>
+<button id="benchRecover">Read buffered log</button> <button id="benchSave">Save BAM JSON</button> <button id="benchDiagnostics">Save diagnostics</button> <button id="benchRelease">Release trial</button>
+</div>
+<output role="status" id="benchMessage"></output><p>Angle (rad) · Target (gray), measured (blue), prediction (orange)</p>
 <label>Plot <select id="benchChannel"><option value="position">Position (rad)</option><option value="speed">Speed (rad/s)</option><option value="load">PWM duty</option><option value="current_raw">Current (counts)</option><option value="input_volts">Supply (V)</option><option value="temp">Temperature (°C)</option></select></label>
-<canvas id="benchPlot" width="700" height="180" style="max-width:100%"></canvas>
-<label>Open recording or model prediction <input id="benchOpen" type="file" accept=".json"></label></section>
+<canvas id="benchPlot" width="700" height="180" style="display:block;max-width:100%"></canvas>
+<label>Open recording or model prediction <input id="benchOpen" type="file" multiple accept=".json"></label></section>
 </main>
 
 <dialog id="dlg">

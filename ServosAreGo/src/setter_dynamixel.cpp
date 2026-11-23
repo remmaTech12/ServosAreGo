@@ -1438,7 +1438,12 @@ void loop()
     static String input;
     if (Serial.available()) {
       char c=Serial.read();
-      if (c=='\n') { input.trim(); trial.command(input); input=""; }
+      if (c=='\n') {
+        input.trim();
+        if (input=="@hello") handleApiCommand(input);
+        else trial.command(input);
+        input="";
+      }
       else if (input.length()<512) input+=c;
     }
     return;

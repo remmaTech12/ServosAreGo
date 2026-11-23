@@ -2,6 +2,16 @@ const benchTrajectories = /*__TRAJECTORIES__*/;
 const radiansPerTick = 2 * Math.PI / 4096;
 let benchRun, benchLog, displayedBenchLog, benchBusy = false, benchCancelled = false;
 const benchMessage = text => $("benchMessage").textContent = text;
+function bamRecording(log) {
+  const {diagnostics, result, arm_mass, ...raw}=log;
+  return raw;
+}
+async function saveToFolder(directory,name,data) {
+  const file=await directory.getFileHandle(name,{create:true});
+  const writer=await file.createWritable();
+  await writer.write(JSON.stringify(data));
+  await writer.close();
+}
 async function benchCommand(args) {
   const result = await command("sysid", args);
   if (!result.ok) throw Error(result.message || "System identification unavailable");
@@ -13,9 +23,9 @@ function plotBench(log) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const entries = log.entries;
   if (!entries?.length) return;
-  const prediction = log.predicted;
+  const predictions = log.predictions ?? (log.predicted ? [log.predicted] : []);
   const series = [entries.map(e => e.goal_position), entries.map(e => e.position)];
-  if (prediction) series.push(prediction);
+  series.push(...predictions);
   const channel=$("benchChannel").value;
   if (channel!=="position") {
     const values=entries.map((e,i)=>channel==="current_raw"?log.diagnostics?.[i]?.current_raw:e[channel]);
@@ -25,7 +35,7 @@ function plotBench(log) {
   const min = Math.min(...series.map(points => Math.min(...points)));
   const span = Math.max(0.01, ...series.map(points => Math.max(...points) - min));
   series.forEach((points, n) => {
-    ctx.strokeStyle = ["#898989", "#287ab8", "#e76f32"][n];
+    ctx.strokeStyle = ["#898989", "#287ab8", "#e76f32", "#8440aa", "#20866a"][n%5];
     ctx.beginPath();
     points.forEach((q,i) => {
       const x = 30 + 640 * entries[i].timestamp / (entries.at(-1).timestamp || 1);
@@ -44,6 +54,7 @@ function plotBench(log) {
   ctx.fillText((min+span).toFixed(2),0,20); ctx.fillText(min.toFixed(2),0,150);
   ctx.fillText("0 s",30,170); ctx.fillText(entries.at(-1).timestamp.toFixed(2)+" s",640,170);
 }
+let benchContext;
 async function recordBench(directory) {
   try {
     const number = id => {
@@ -57,10 +68,13 @@ async function recordBench(directory) {
     if (points.some(([q]) => Math.abs(q*radiansPerTick)>limit || zero+q<0 || zero+q>4095))
       throw Error("Trajectory exceeds bench travel");
     const meta={mass:number("benchMass"),"arm-mass":number("benchArm"),length:number("benchLength"),vin:number("benchVin"),kp,trajectory:name};
-    const {model}=await benchCommand("inspect "+id);
+    const capabilities=await benchCommand("inspect "+id);
+    const {model}=capabilities;
+    if (model!=="xl330") throw Error("No BAM log converter registered for "+model);
+    if (!capabilities.torqueSwitch && points.some(([,on])=>!on)) throw Error("Torque switching unavailable");
     const ticks=Math.floor(limit/radiansPerTick);
     const {run}=await benchCommand(`prepare ${id} ${points.length} 5000 ${kp} ${Math.max(0,zero-ticks)} ${Math.min(4095,zero+ticks)}`);
-    benchRun=run; benchLog=null;
+    benchRun=run; benchLog=null; benchContext={run,meta,model,zero};
     for (let i=0;i<points.length;i+=12) {
       if (benchCancelled) throw Error("Cancelled before start");
       const chunk=points.slice(i,i+12).map(([q,on])=>[q+zero,on].join(",")).join(" ");
@@ -69,10 +83,25 @@ async function recordBench(directory) {
     if (benchCancelled) throw Error("Cancelled before start");
     await benchCommand("start "+run);
     benchMessage("Recording…");
+    await retrieveBench(benchContext);
+    if (directory) {
+      const target=benchLog.result==="complete"?directory:await directory.getDirectoryHandle("partial",{create:true});
+      const filename=name+"-"+kp+"-"+Date.now()+".json";
+      const diagnosticDir=await directory.getDirectoryHandle("diagnostics",{create:true});
+      await saveToFolder(diagnosticDir,filename,{result:benchLog.result,diagnostics:benchLog.diagnostics});
+      await saveToFolder(target,filename,bamRecording(benchLog));
+      await benchCommand("release "+run);
+      benchRun=null;
+      if (benchLog.result!=="complete") throw Error(benchLog.result);
+    }
+  } catch(e) { throw e; }
+}
+async function retrieveBench({run,meta,model,zero}) {
     let status;
     do {
       await new Promise(resolve=>setTimeout(resolve,300));
       status=await benchCommand("status "+run);
+      if(status.message==="ready") throw Error("Trial has not started");
     } while (!status.done);
     const entries=[], diagnostics=[];
     while(entries.length<status.count) {
@@ -85,17 +114,22 @@ async function recordBench(directory) {
     }
     benchLog={...meta,motor:model,arm_mass:meta["arm-mass"],entries,diagnostics,result:status.message};
     plotBench(benchLog); benchMessage(status.message+" · "+entries.length+" samples");
-    if (directory) {
-      const file=await directory.getFileHandle(benchLog.result+"-"+name+"-"+kp+"-"+Date.now()+".json",{create:true});
-      const writer=await file.createWritable();
-      await writer.write(JSON.stringify(benchLog));
-      await writer.close();
-      await benchCommand("release "+run);
-      benchRun=null;
-      if (status.message!=="complete") throw Error(status.message);
-    }
-  } catch(e) { throw e; }
 }
+$("benchRecover").onclick=async()=>{
+  if (benchBusy || !benchRun) return;
+  try { await retrieveBench(benchContext); } catch(e) {benchMessage(e.message);}
+};
+$("benchInspect").onclick=async()=>{
+  try {
+    const info=await benchCommand("inspect "+$("benchId").valueAsNumber);
+    for (const option of $("benchTrajectory").options) {
+      option.disabled=!info.torqueSwitch && benchTrajectories[option.value].some(([,on])=>!on);
+    }
+    const channels={position:"position",speed:"speed",load:"pwm",current_raw:"current",input_volts:"voltage",temp:"temperature"};
+    for (const option of $("benchChannel").options) option.disabled=!info.channels.includes(channels[option.value]);
+    benchMessage(info.model+" · Kp "+info.kp+" · "+info.channels.join(", "));
+  } catch(e) {benchMessage(e.message);}
+};
 $("benchStart").onclick=async()=>{
   if (benchBusy || benchRun) return;
   benchBusy=true; benchCancelled=false;
@@ -126,18 +160,37 @@ $("benchAbort").onclick=()=>{
   if (benchRun) benchCommand("abort "+benchRun).catch(e=>benchMessage(e.message));
 };
 $("benchChannel").onchange=()=>displayedBenchLog && plotBench(displayedBenchLog);
-$("benchSave").onclick=()=>{
+function downloadBench(diagnostics){
   if (!benchLog) return;
-  const url=URL.createObjectURL(new Blob([JSON.stringify(benchLog)],{type:"application/json"}));
-  const a=document.createElement("a"); a.href=url; a.download=benchLog.result+"-"+benchLog.trajectory+"-"+Date.now()+".json"; a.click();
+  const url=URL.createObjectURL(new Blob([JSON.stringify(diagnostics?{result:benchLog.result,diagnostics:benchLog.diagnostics}:bamRecording(benchLog))],{type:"application/json"}));
+  const a=document.createElement("a"); a.href=url; a.download=(diagnostics?"diagnostics-":"")+benchLog.result+"-"+benchLog.trajectory+"-"+Date.now()+".json"; a.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
+$("benchSave").onclick=()=>downloadBench(false);
+$("benchDiagnostics").onclick=()=>downloadBench(true);
 $("benchRelease").onclick=async()=>{
   if (benchBusy || !benchRun) return;
   try { await benchCommand("release "+benchRun); benchRun=null; benchMessage("Ready"); }
   catch(e){benchMessage(e.message);}
 };
 $("benchOpen").onchange=async e=>{
-  try {const log=JSON.parse(await e.target.files[0].text()); plotBench(log); benchMessage(log.trajectory+" "+(log.mae_deg===undefined?"":"MAE "+log.mae_deg.toFixed(3)+"°"));}
-  catch(err){benchMessage(err.message);}
+  try {
+    const files=Array.from(e.target.files);
+    const logs=await Promise.all(files.map(async file=>JSON.parse(await file.text())));
+    const log=logs[0], predictions=[], labels=[];
+    if (!log?.entries?.length) throw Error("Select a recording");
+    for (let i=0; i<logs.length; i++) {
+      const item=logs[i];
+      if (item.entries.length!==log.entries.length || item.entries.some((v,j)=>
+        v.timestamp!==log.entries[j].timestamp || v.position!==log.entries[j].position ||
+        v.goal_position!==log.entries[j].goal_position)) throw Error("Select predictions from the same recording");
+      if (item.predicted) {
+        if (item.predicted.length!==log.entries.length) throw Error("Prediction length mismatch");
+        predictions.push(item.predicted);
+        labels.push(files[i].name+" · MAE "+item.mae_deg.toFixed(3)+"°");
+      }
+    }
+    plotBench({...log,predictions});
+    benchMessage(labels.join(" | ") || log.trajectory);
+  } catch(err){benchMessage(err.message);}
 };

@@ -79,11 +79,13 @@ def record(port, args, trajectory, kp):
             mass=args.mass,
             length=args.length,
             entries=entries,
-            diagnostics=diagnostics,
-            result=result,
         )
         data["arm-mass"] = args.arm_mass
-        data["arm_mass"] = args.arm_mass
+        diagnostic_dir = args.out / "diagnostics"
+        diagnostic_dir.mkdir(exist_ok=True)
+        (diagnostic_dir / path.name).write_text(
+            json.dumps(dict(result=result, diagnostics=diagnostics))
+        )
         temp = path.with_suffix(".tmp")
         temp.write_text(json.dumps(data, allow_nan=False))
         temp.replace(path)
