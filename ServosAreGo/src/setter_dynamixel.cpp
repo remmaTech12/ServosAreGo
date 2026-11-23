@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "servo_bus.h"
+#include "sysid.h"
 #include "servo_select.h"
 
 namespace dynamixel
@@ -1406,15 +1407,50 @@ void setup()
   disp_menu();
 }
 
+// XL330-M288 normal position control on a 5 V pendulum bench.
+static bool inspectBench(int id, u32 &gain) {
+  u32 model, mode, enabled, voltage, error, di, profile, acceleration, ff;
+  auto read = [&](int addr, int size, u32 &v) { return dxlReadValue(id,addr,size,&v)==DXL_OK; };
+  return read(0,2,model) && model==1200 && read(11,1,mode) && mode==3 &&
+    read(64,1,enabled) && !enabled && read(70,1,error) && !error &&
+    read(144,2,voltage) && voltage>=37 && voltage<=60 &&
+    read(80,4,di) && !di && read(88,4,ff) && !ff &&
+    read(108,4,acceleration) && !acceleration && read(112,4,profile) && !profile && read(84,2,gain);
+}
+static bool readBench(int id, sysid::Sample &s) {
+  uint8_t raw[23];
+  if (dxlRead(id,124,sizeof(raw),raw)!=DXL_OK || (lastStatusError & 0x80)) return false;
+  memcpy(&s.pwm,raw,2); memcpy(&s.current,raw+2,2);
+  memcpy(&s.speed,raw+4,4); memcpy(&s.position,raw+8,4);
+  memcpy(&s.voltage,raw+20,2); s.temperature=raw[22];
+  return s.voltage>=37 && s.voltage<=60 && s.temperature<70;
+}
+static const sysid::Adapter bench = {"xl330",4095,400,
+  R"(["position","speed","pwm","current","voltage","temperature"])",true,inspectBench,
+  [](int id,int value){ return dxlWriteValue(id,84,2,value)==DXL_OK; },
+  [](int id,int value){ return dxlWriteValue(id,116,4,value)==DXL_OK; },
+  [](int id,bool on){ return dxlWriteValue(id,64,1,on)==DXL_OK; },readBench};
+static sysid::Trial trial(bench);
 void loop()
 {
+  if (trial.ownsBus()) {
+    trial.tick();
+    static String input;
+    if (Serial.available()) {
+      char c=Serial.read();
+      if (c=='\n') { input.trim(); trial.command(input); input=""; }
+      else if (input.length()<512) input+=c;
+    }
+    return;
+  }
   // シリアル入力チェック
   if (Serial.available())
   {
     String command = Serial.readStringUntil('\n'); // 改行を受けたらすぐ処理（ブラウザからの操作を速くする）
     command.trim();
 
-    if (command == "x")
+    if (command.startsWith("@sysid ")) trial.command(command);
+    else if (command == "x")
     {
       executeAngleCommand();
     }
