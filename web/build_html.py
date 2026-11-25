@@ -77,7 +77,12 @@ def main():
 
     with open(os.path.join(WEB_DIR, "src", "index.html"), encoding="utf-8") as f:
         html = f.read()
+    from pathlib import Path
+    root = Path(WEB_DIR)
+    sysid = (root / "src/sysid.js").read_text().replace(
+        "/*__TRAJECTORIES__*/", (root.parent / "tools/sysid/trajectories.json").read_text().strip())
     replacements = {
+        "/*__SYSID__*/": sysid,
         "/*__FW_VERSION__*/": version,
         "/*__KINDS_JSON__*/": json.dumps(read_kind_names()),
         "/*__LOGO_B64__*/": b64_file(os.path.join(WEB_DIR, "assets", "logo.png")),

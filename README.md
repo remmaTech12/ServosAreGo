@@ -173,3 +173,7 @@ ID・通信速度・EEPROM の書き換えはサーボの動作に直接影響�
 ## ライセンス
 
 MIT License（[LICENSE](LICENSE)）。ブラウザ版には [esptool-js](web/vendor/esptool-js.LICENSE) を同梱しています。
+
+## サーボのシステム同定
+
+XL330 の軌道計測、BAM 互換ログの保存とモデル比較は[同定手順](tools/sysid/README.md)を参照してください。
