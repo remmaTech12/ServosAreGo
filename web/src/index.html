@@ -212,6 +212,7 @@ details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
     </div>
   </section>
 <section class="wide" id="identification"><h2>System Identification</h2><p>Single servo · Position control · 5 ms</p><div class="bench-fields">
+<label>Servo model <select id="benchModel"><option value="xl330">XL330-M288-T</option></select></label>
 <label>Servo ID <input required type="number" id="benchId" value="1" min="0" max="252" step="1" style="width:6em"></label>
 <label>Position P gain <input required type="number" id="benchGain" value="100" min="1" max="400" step="1" style="width:6em"></label>
 <label>Downward zero (ticks) <input required type="number" id="benchZero" value="2048" min="0" max="4095" step="1" style="width:6em"></label>

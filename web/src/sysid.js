@@ -54,6 +54,14 @@ function plotBench(log) {
   ctx.fillText((min+span).toFixed(2),0,20); ctx.fillText(min.toFixed(2),0,150);
   ctx.fillText("0 s",30,170); ctx.fillText(entries.at(-1).timestamp.toFixed(2)+" s",640,170);
 }
+async function inspectBenchModel(id) {
+  const selected = $("benchModel").value;
+  const info = await benchCommand("inspect " + id);
+  if (info.model !== selected) {
+    throw Error("Servo ID " + id + ": selected " + selected + ", detected " + info.model);
+  }
+  return info;
+}
 let benchContext;
 async function recordBench(directory) {
   try {
@@ -68,7 +76,7 @@ async function recordBench(directory) {
     if (points.some(([q]) => Math.abs(q*radiansPerTick)>limit || zero+q<0 || zero+q>4095))
       throw Error("Trajectory exceeds bench travel");
     const meta={mass:number("benchMass"),"arm-mass":number("benchArm"),length:number("benchLength"),vin:number("benchVin"),kp,trajectory:name};
-    const capabilities=await benchCommand("inspect "+id);
+    const capabilities=await inspectBenchModel(id);
     const {model}=capabilities;
     if (model!=="xl330") throw Error("No BAM log converter registered for "+model);
     if (!capabilities.torqueSwitch && points.some(([,on])=>!on)) throw Error("Torque switching unavailable");
@@ -121,7 +129,7 @@ $("benchRecover").onclick=async()=>{
 };
 $("benchInspect").onclick=async()=>{
   try {
-    const info=await benchCommand("inspect "+$("benchId").valueAsNumber);
+    const info=await inspectBenchModel($("benchId").valueAsNumber);
     for (const option of $("benchTrajectory").options) {
       option.disabled=!info.torqueSwitch && benchTrajectories[option.value].some(([,on])=>!on);
     }
@@ -133,7 +141,7 @@ $("benchInspect").onclick=async()=>{
 $("benchStart").onclick=async()=>{
   if (benchBusy || benchRun) return;
   benchBusy=true; benchCancelled=false;
-  const controls=["benchTest","benchTrajectory","benchGain","benchId","benchZero","benchLimit","benchMass","benchArm","benchLength","benchVin"];
+  const controls=["benchModel","benchTest","benchTrajectory","benchGain","benchId","benchZero","benchLimit","benchMass","benchArm","benchLength","benchVin"];
   const originalName=$("benchTrajectory").value, originalGain=$("benchGain").value;
   controls.forEach(id=>$(id).disabled=true);
   try {
